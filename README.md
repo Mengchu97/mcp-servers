@@ -82,9 +82,53 @@ Add to your MCP client config (e.g. `claude_desktop_config.json`, `.cursor/mcp.j
 | `import_papers_to_zotero` | Import papers into a Zotero collection (with DOI validation) |
 | `list_zotero_collections` | List all collections in your Zotero library |
 
-### Documentation
+---
 
-- [Zotero Workflow Guide](./ai-zotero-workflow/docs/ZOTERO_WORKFLOW_GUIDE.md) — detailed workflow explanation and AI prompt templates
+## ai-latex-bib-sync
+
+Bidirectional sync between BibTeX .bib files and Zotero collections.
+
+### Features
+
+- **Bib → Zotero** — Import .bib entries to Zotero (DOI/title matching skips duplicates)
+- **Zotero → Bib** — Export Zotero collections to .bib files (append or overwrite)
+- **Diff** — Compare .bib vs Zotero collection to see gaps on each side
+- **Cite key check** — Scan .tex for `\cite{}` references missing from .bib
+- **Cite key generator** — `AuthorYearWord` format (e.g., `Zou2006Sparse`)
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ZOTERO_API_KEY` | Yes | Zotero Web API key. Get one at [zotero.org/settings/keys](https://www.zotero.org/settings/keys). |
+| `ZOTERO_USER_ID` | Yes | Your Zotero user ID (numeric). |
+
+### MCP Client Configuration
+
+```json
+{
+  "mcpServers": {
+    "ai-latex-bib-sync": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-servers/ai-latex-bib-sync/dist/index.js"],
+      "env": {
+        "ZOTERO_API_KEY": "your-zotero-api-key",
+        "ZOTERO_USER_ID": "your-zotero-user-id"
+      }
+    }
+  }
+}
+```
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `sync_bib_to_zotero` | Import .bib entries into a Zotero collection |
+| `sync_zotero_to_bib` | Export Zotero collection to a .bib file |
+| `diff_bib_zotero` | Compare .bib file with Zotero collection |
+| `check_cite_keys` | Scan .tex files for missing/unused citation keys |
+| `generate_cite_key` | Generate an `AuthorYearWord` citation key |
 
 ---
 
