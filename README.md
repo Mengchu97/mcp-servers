@@ -7,6 +7,7 @@ A collection of [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 | Server | Description |
 |--------|-------------|
 | [ai-zotero-workflow](./ai-zotero-workflow/) | Automated academic literature search (Semantic Scholar) and import to Zotero |
+| [ai-latex-bib-sync](./ai-latex-bib-sync/) | Bidirectional sync between BibTeX files and Zotero collections |
 
 ## Quick Start
 
