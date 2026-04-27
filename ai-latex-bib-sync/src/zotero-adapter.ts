@@ -12,6 +12,7 @@ import type {
   ZoteroCreator,
   ZoteroItem,
 } from "./types.js";
+import { generateCiteKey } from "./cite-key.js";
 
 // --- Local Types ---
 
@@ -139,13 +140,23 @@ export async function listCollections(): Promise<ZoteroCollection[]> {
         "Cannot list collections: local API unavailable and ZOTERO_API_KEY not set",
       );
     }
-    const res = await webApiRequest("GET", "/collections");
-    if (!res.ok) {
-      throw new Error(
-        `Zotero Web API error: ${res.status} ${await res.text()}`,
-      );
+    // Paginate — Zotero returns max 100 items per request
+    const allCollections: ZoteroCollection[] = [];
+    let start = 0;
+    const limit = 100;
+    while (true) {
+      const res = await webApiRequest("GET", `/collections?limit=${limit}&start=${start}`);
+      if (!res.ok) {
+        throw new Error(
+          `Zotero Web API error: ${res.status} ${await res.text()}`,
+        );
+      }
+      const batch = await res.json() as ZoteroCollection[];
+      allCollections.push(...batch);
+      if (batch.length < limit) break;
+      start += limit;
     }
-    return res.json() as Promise<ZoteroCollection[]>;
+    return allCollections;
   }
 }
 
@@ -212,16 +223,26 @@ export async function listItems(
   collectionKey?: string,
 ): Promise<ZoteroItem[]> {
   if (hasWebApi()) {
-    const path = collectionKey
-      ? `/collections/${collectionKey}/items/top`
-      : "/items/top";
-    const res = await webApiRequest("GET", path);
-    if (!res.ok) {
-      throw new Error(
-        `Zotero Web API error: ${res.status} ${await res.text()}`,
-      );
+    // Paginate — Zotero returns max 100 items per request
+    const allItems: ZoteroItem[] = [];
+    let start = 0;
+    const limit = 100;
+    while (true) {
+      const path = collectionKey
+        ? `/collections/${collectionKey}/items/top?limit=${limit}&start=${start}`
+        : `/items/top?limit=${limit}&start=${start}`;
+      const res = await webApiRequest("GET", path);
+      if (!res.ok) {
+        throw new Error(
+          `Zotero Web API error: ${res.status} ${await res.text()}`,
+        );
+      }
+      const batch = await res.json() as ZoteroItem[];
+      allItems.push(...batch);
+      if (batch.length < limit) break;
+      start += limit;
     }
-    return res.json() as Promise<ZoteroItem[]>;
+    return allItems;
   }
 
   // Fallback: local API
@@ -385,17 +406,17 @@ export function zoteroItemToBibEntry(item: ZoteroItem): BibEntry {
   }
   if (d.extra) fields.extra = d.extra;
 
-  // Generate a citation key from title + year
+  // Generate a citation key using the unified AuthorYearWord generator
   const firstAuthor = d.creators?.find((c) => c.creatorType === "author");
-  const lastName = firstAuthor?.lastName ?? "Unknown";
-  const keyParts = [lastName.replace(/\s+/g, "")];
-  if (year) keyParts.push(year);
-  const titleWord = d.title
-    ?.replace(/[{}\\]/g, "")
-    .split(/\s+/)
-    .find((w) => w.length > 2);
-  if (titleWord) keyParts.push(titleWord);
-  const key = keyParts.join("");
+  const authorStr = d.creators
+    ?.filter((c: ZoteroCreator) => c.creatorType === "author")
+    .map((c: ZoteroCreator) => `${c.lastName}, ${c.firstName ?? ""}`)
+    .join(" and ");
+  const key = generateCiteKey({
+    author: authorStr ?? "Unknown",
+    year: year ?? "",
+    title: d.title ?? "",
+  });
 
   return {
     key,

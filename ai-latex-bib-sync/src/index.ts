@@ -31,7 +31,25 @@ import {
 } from "./zotero-adapter.js";
 import { matchEntries, normalizeDoi } from "./matcher.js";
 import { scanCiteKeys, checkCiteKeys, findTexFiles } from "./tex-scanner.js";
-import type { BibEntry, BibFile } from "./types.js";
+import type { BibEntry, BibFile, ZoteroItem } from "./types.js";
+
+/**
+ * Convert a BibEntry to a ZoteroItem-like shape for use in matchEntries.
+ * This avoids type mismatches when matching BibEntry[] vs BibEntry[].
+ */
+function bibEntryToZoteroLike(entry: BibEntry): ZoteroItem {
+  return {
+    key: entry.key,
+    version: 0,
+    data: {
+      key: entry.key,
+      itemType: "",
+      title: entry.title ?? entry.fields.title ?? "",
+      creators: [],
+      DOI: entry.doi ?? entry.fields.doi,
+    },
+  };
+}
 
 const server = new McpServer({
   name: "ai-latex-bib-sync",
@@ -179,7 +197,7 @@ server.tool(
       }
 
       // Match and find new entries
-      const matchResult = matchEntries(zoteroEntries, existingBib.entries as any[]);
+      const matchResult = matchEntries(zoteroEntries, existingBib.entries.map(bibEntryToZoteroLike));
       const newEntries = matchResult.onlyInBib;
 
       if (newEntries.length === 0) {
