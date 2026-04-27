@@ -66,9 +66,17 @@ When you want AI to perform a literature import task, **send a prompt like the f
 
 > *"Search for [count, e.g. 10] recent high-quality papers on [topic, e.g. Large Language Models Alignment]. Prioritize papers published in top venues (e.g. NeurIPS, ICLR). Download open-access PDFs and import them into my Zotero collection '[collection name, e.g. LLM_Align]'. If no official OA PDF is available, use the arXiv version instead."*
 
+For advanced use with the import template script:
+
+> *"Using the workflow in `ai-zotero-workflow/README.md` and its companion template `scripts/zotero-import-template.ts`, search for [count] recent high-quality papers on [topic]. Prioritize papers published in top venues. Download open-access PDFs and import them into my Zotero collection '[collection name]'."*
+
 ### arXiv-only mode
 
 > *"Fetch 10 arXiv-only preprints on [topic], including locally-linked PDFs, and save them to Zotero collection '[collection name]'."*
+
+Or using the template script:
+
+> *"Using the logic in `ai-zotero-workflow/scripts/zotero-import-template.ts`, fetch 10 arXiv-only preprints on [topic], including locally-linked PDFs, and save them to Zotero collection '[collection name]'."*
 
 ### Browse existing library
 
