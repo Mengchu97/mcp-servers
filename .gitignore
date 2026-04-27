@@ -1,0 +1,169 @@
+# ================================================================= #
+#                       Global Gitignore                            #
+#                                                                   #
+#  Dual-purpose:                                                    #
+#    1. Global excludesfile (core.excludesfile in gitconfig)        #
+#    2. Template for "git bn" (copied to project .gitignore)        #
+#                                                                   #
+#  PDF policy: Ignored by default, except under release/.           #
+# ================================================================= #
+
+# --- Section 1: Operating Systems & System Files ---
+# ---------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# --- Section 2: Editors & IDEs ---
+# ---------------------------------
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+.history/
+
+# JetBrains (PyCharm, IntelliJ, etc)
+.idea/
+*.iml
+*.iws
+
+# Vim
+*.swp
+*.swo
+*.swn
+*.netrwhist
+
+# Emacs
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# --- Section 3: Languages & Frameworks ---
+# -----------------------------------------
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+/env/
+/venv/
+/.env
+/.venv
+/build/
+/dist/
+*.egg-info/
+*.egg
+.installed.cfg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+
+# UV
+.uv/
+
+# Lock files (poetry.lock, Pipfile.lock, uv.lock) are NOT ignored
+# as they should generally be committed for reproducible builds.
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+
+# PDFs (ignored by default, allowed in release/)
+*.pdf
+!release/**.pdf
+
+# LaTeX
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.brf
+*.bsl
+*.cut
+*.dvi
+*.fls
+*.fmt
+*.fot
+*.glg
+*.glo
+*.gls
+*.idx
+*.ilg
+*.ind
+*.ist
+*.lof
+*.log
+*.lot
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
+*.fdb_latexmk
+*.synctex
+*.synctex\(busy\)
+latex.out/
+
+# MATLAB
+*.asv
+*.m~
+*.mex*
+*.mlappinstall
+*.mltbx
+slprj/
+codegen/
+octave-workspace
+
+
+
+# --- Node.js / TypeScript (for MCP servers) ---
+node_modules/
+**/dist/
+**/build/
+*.tsbuildinfo
+.env*
+
+# --- MCP server data directories ---
+pdfs/
+zotero_pdfs/
+
+# --- AI/Dev tools ---
+.opencode/
