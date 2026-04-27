@@ -39,7 +39,7 @@ The server is built on the **Semantic Scholar (S2) API**, because S2 aggregates 
   "mcpServers": {
     "ai-zotero-workflow": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-servers/ai-zotero-workflow/dist/index.js"],
+      "args": ["~/mcp-servers/ai-zotero-workflow/dist/index.js"],
       "env": {
         "ZOTERO_API_KEY": "your-zotero-api-key",
         "ZOTERO_USER_ID": "your-zotero-user-id"

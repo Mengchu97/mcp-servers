@@ -11,20 +11,16 @@ A collection of [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 
 ## Quick Start
 
-Each server is a standalone TypeScript project in its own directory. General setup:
-
 ```bash
-# 1. Clone the repo
-git clone https://github.com/Mengchu97/mcp-servers.git
-cd mcp-servers
+# 1. Clone to home directory
+git clone https://github.com/Mengchu97/mcp-servers.git ~/mcp-servers
 
-# 2. Build a server
-cd ai-zotero-workflow
-npm install
-npm run build
+# 2. Build all servers
+cd ~/mcp-servers/ai-zotero-workflow && npm install && npm run build
+cd ~/mcp-servers/ai-latex-bib-sync && npm install && npm run build
 ```
 
-Then configure your MCP client (e.g. Claude Desktop, Cursor, OpenCode) to launch the server.
+Then configure your MCP client (Claude Desktop, Cursor, OpenCode, etc.) to launch the servers. All config examples below assume the repo is cloned to `~/mcp-servers/`.
 
 ---
 
@@ -63,7 +59,7 @@ Add to your MCP client config (e.g. `claude_desktop_config.json`, `.cursor/mcp.j
   "mcpServers": {
     "ai-zotero-workflow": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-servers/ai-zotero-workflow/dist/index.js"],
+      "args": ["~/mcp-servers/ai-zotero-workflow/dist/index.js"],
       "env": {
         "ZOTERO_API_KEY": "your-zotero-api-key",
         "ZOTERO_USER_ID": "your-zotero-user-id"
@@ -110,7 +106,7 @@ Bidirectional sync between BibTeX .bib files and Zotero collections.
   "mcpServers": {
     "ai-latex-bib-sync": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-servers/ai-latex-bib-sync/dist/index.js"],
+      "args": ["~/mcp-servers/ai-latex-bib-sync/dist/index.js"],
       "env": {
         "ZOTERO_API_KEY": "your-zotero-api-key",
         "ZOTERO_USER_ID": "your-zotero-user-id"

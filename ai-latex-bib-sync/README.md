@@ -43,7 +43,7 @@ Articles and prepositions (a, an, the, of, in, on, etc.) are skipped when select
   "mcpServers": {
     "ai-latex-bib-sync": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-servers/ai-latex-bib-sync/dist/index.js"],
+      "args": ["~/mcp-servers/ai-latex-bib-sync/dist/index.js"],
       "env": {
         "ZOTERO_API_KEY": "your-zotero-api-key",
         "ZOTERO_USER_ID": "your-zotero-user-id"
