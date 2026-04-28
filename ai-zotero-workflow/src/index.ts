@@ -1,3 +1,17 @@
+
+import { execSync } from "child_process";
+try {
+  const output = execSync('bash -i -c "env"', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
+  for (const line of output.split('\n')) {
+    const match = line.match(/^([^=]+)=(.*)$/);
+    if (match && !process.env[match[1]]) {
+      process.env[match[1]] = match[2];
+    }
+  }
+} catch (e) {
+  // Ignore
+}
+
 /**
  * MCP Server for automated literature research and Zotero import.
  *
@@ -27,6 +41,11 @@ import {
   listCollections,
   createCollection,
   importPapers,
+  searchLocalItems,
+  deleteItem,
+  getCollectionItems,
+  getItem,
+  updateItem
 } from "./zotero.js";
 import { validatePapers, filterPapersWithDoi } from "./doi-validator.js";
 
@@ -301,6 +320,138 @@ server.tool(
     }
   },
 );
+
+
+// --- Tool 5: get_collection_items ---
+
+server.tool(
+  "zotero_get_collection_items",
+  "Get all items from a specific Zotero collection (paginated).",
+  {
+    collection_key: z.string().describe("The key of the Zotero collection"),
+    start: z.number().optional().default(0).describe("Pagination start index"),
+    limit: z.number().optional().default(50).describe("Number of items to return")
+  },
+  async (params) => {
+    try {
+      const items = await getCollectionItems(params.collection_key, params.start, params.limit);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(items, null, 2) }]
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// --- Tool 6: get_item ---
+
+server.tool(
+  "zotero_get_item",
+  "Get full metadata for a specific Zotero item.",
+  {
+    item_key: z.string().describe("The key of the Zotero item")
+  },
+  async (params) => {
+    try {
+      const item = await getItem(params.item_key);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(item, null, 2) }]
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// --- Tool 7: update_item ---
+
+server.tool(
+  "zotero_update_item",
+  "Update specific fields of a Zotero item via PATCH request.",
+  {
+    item_key: z.string().describe("The key of the Zotero item to update"),
+    current_version: z.number().describe("The current version number of the item (required for concurrency control)"),
+    data_json: z.string().describe("JSON string representing the fields to update (e.g. \'{\"DOI\": \"10.1234/567\"}\')"),
+  },
+  async (params) => {
+    try {
+      let data;
+      try {
+        data = JSON.parse(params.data_json);
+      } catch (e) {
+        throw new Error("Invalid data_json. Must be a valid JSON string.");
+      }
+      
+      const result = await updateItem(params.item_key, data, params.current_version);
+      return {
+        content: [{ type: "text" as const, text: `Successfully updated item ${params.item_key}\n` + JSON.stringify(result, null, 2) }]
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// --- Tool 8: search_library ---
+
+server.tool(
+  "zotero_search_library",
+  "Search the local Zotero library (via Better BibTeX RPC). Requires Zotero to be running locally.",
+  {
+    query: z.string().describe("Search query string")
+  },
+  async (params) => {
+    try {
+      const items = await searchLocalItems(params.query);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(items, null, 2) }]
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true
+      };
+    }
+  }
+);
+
+// --- Tool 9: delete_items ---
+
+server.tool(
+  "zotero_delete_items",
+  "Delete one or more items from Zotero by key.",
+  {
+    item_keys: z.array(z.string()).describe("Array of Zotero item keys to delete")
+  },
+  async (params) => {
+    try {
+      const results = [];
+      for (const key of params.item_keys) {
+        const ok = await deleteItem(key);
+        results.push(`${key}: ${ok ? "Deleted" : "Failed"}`);
+      }
+      return {
+        content: [{ type: "text" as const, text: results.join("\n") }]
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true
+      };
+    }
+  }
+);
+
 
 // --- Start server ---
 

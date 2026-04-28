@@ -32,6 +32,8 @@ The server is built on the **Semantic Scholar (S2) API**, because S2 aggregates 
 | `ZOTERO_LOCAL_PORT` | No | Local Zotero connector port (default: `23119`) |
 | `SEMANTIC_SCHOLAR_API_KEY` | No | S2 API key for higher rate limits. Request at [semanticscholar.org/product/api](https://www.semanticscholar.org/product/api) |
 
+> **Note on Environment Variables:** This MCP server automatically sources `~/.bashrc`, `~/.bash_profile`, and `~/.bash_env.local` upon startup. You do not need to explicitly configure `env` in your MCP settings if these variables are already exported in your local bash configuration.
+
 ## MCP Client Configuration
 
 ```json
@@ -57,6 +59,11 @@ The server is built on the **Semantic Scholar (S2) API**, because S2 aggregates 
 | `create_zotero_collection` | Create a new collection in Zotero |
 | `import_papers_to_zotero` | Import papers into a Zotero collection (with DOI validation) |
 | `list_zotero_collections` | List all collections in your Zotero library |
+| `zotero_get_collection_items` | Get all items from a specific Zotero collection (paginated) |
+| `zotero_get_item` | Get full metadata for a specific Zotero item |
+| `zotero_update_item` | Update specific fields of a Zotero item via PATCH request |
+| `zotero_search_library` | Search the local Zotero library (via Better BibTeX RPC) |
+| `zotero_delete_items` | Delete one or more items from Zotero by key |
 
 ## AI Prompt Templates
 

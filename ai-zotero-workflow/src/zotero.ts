@@ -431,3 +431,59 @@ export async function searchLocalItems(query: string): Promise<unknown[]> {
   const data = (await res.json()) as { result: unknown[] };
   return data.result ?? [];
 }
+
+// --- NEW API ENDPOINTS FOR MCP ---
+
+/**
+ * Get items from a specific collection (paginated).
+ */
+export async function getCollectionItems(collectionKey: string, start: number = 0, limit: number = 50): Promise<any[]> {
+  if (!hasWebApi()) {
+    throw new Error("getCollectionItems requires ZOTERO_API_KEY");
+  }
+  const res = await webApiRequest("GET", `/collections/${collectionKey}/items?start=${start}&limit=${limit}`);
+  if (!res.ok) throw new Error(`Zotero Web API error: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+/**
+ * Get a specific item by key.
+ */
+export async function getItem(itemKey: string): Promise<any> {
+  if (!hasWebApi()) {
+    throw new Error("getItem requires ZOTERO_API_KEY");
+  }
+  const res = await webApiRequest("GET", `/items/${itemKey}`);
+  if (!res.ok) throw new Error(`Zotero Web API error: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+/**
+ * Update an item.
+ */
+export async function updateItem(itemKey: string, data: any, currentVersion: number): Promise<any> {
+  if (!hasWebApi()) {
+    throw new Error("updateItem requires ZOTERO_API_KEY");
+  }
+  
+  const apiKey = getZoteroApiKey()!;
+  const userId = getZoteroUserId();
+  const url = `${ZOTERO_API_BASE}/users/${userId}/items/${itemKey}`;
+
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      "Zotero-API-Key": apiKey,
+      "Content-Type": "application/json",
+      "If-Unmodified-Since-Version": currentVersion.toString()
+    },
+    body: JSON.stringify(data)
+  });
+  
+  if (!res.ok) {
+    throw new Error(`Zotero Web API error: ${res.status} ${await res.text()}`);
+  }
+  
+  // Return nothing on success (204 No Content usually)
+  return res.status === 204 ? { success: true } : res.json().catch(() => ({ success: true }));
+}
