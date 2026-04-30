@@ -51,6 +51,8 @@ export interface ZoteroItem {
     url?: string;
     abstractNote?: string;
     publicationTitle?: string;
+    conferenceName?: string;
+    bookTitle?: string;
     volume?: string;
     issue?: string;
     pages?: string;

@@ -77,6 +77,8 @@ Add to your MCP client config (e.g. `claude_desktop_config.json`, `.cursor/mcp.j
 | `create_zotero_collection` | Create a new collection in Zotero |
 | `import_papers_to_zotero` | Import papers into a Zotero collection (with DOI validation) |
 | `list_zotero_collections` | List all collections in your Zotero library |
+| `zotero_clean_braces` | Clean LaTeX curly braces from collection items (accent commands → Unicode) |
+| `zotero_apply_sentence_case` | Convert titles to Sentence Case with acronym/proper noun protection |
 
 ---
 

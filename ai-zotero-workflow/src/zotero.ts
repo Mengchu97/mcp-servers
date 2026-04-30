@@ -487,3 +487,34 @@ export async function updateItem(itemKey: string, data: any, currentVersion: num
   // Return nothing on success (204 No Content usually)
   return res.status === 204 ? { success: true } : res.json().catch(() => ({ success: true }));
 }
+
+/**
+ * Get ALL items from a collection (auto-paginates).
+ * Filters out attachments and notes, returns only real items.
+ */
+export async function getAllCollectionItems(collectionKey: string): Promise<any[]> {
+  if (!hasWebApi()) {
+    throw new Error("getAllCollectionItems requires ZOTERO_API_KEY");
+  }
+  
+  const allItems: any[] = [];
+  let start = 0;
+  const limit = 100;
+  
+  while (true) {
+    const res = await webApiRequest("GET", `/collections/${collectionKey}/items?start=${start}&limit=${limit}`);
+    if (!res.ok) throw new Error(`Zotero Web API error: ${res.status} ${await res.text()}`);
+    const items = await res.json();
+    if (!items || items.length === 0) break;
+    allItems.push(...items);
+    if (items.length < limit) break;
+    start += limit;
+  }
+  
+  // Filter to real items only (not attachments/notes)
+  return allItems.filter(item =>
+    item.data?.itemType &&
+    item.data.itemType !== "attachment" &&
+    item.data.itemType !== "note"
+  );
+}

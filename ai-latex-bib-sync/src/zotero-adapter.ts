@@ -22,6 +22,8 @@ export interface ZoteroItemData {
   creators: ZoteroCreator[];
   abstractNote?: string;
   publicationTitle?: string;
+  conferenceName?: string;
+  bookTitle?: string;
   date?: string;
   DOI?: string;
   url?: string;
@@ -390,11 +392,15 @@ export function zoteroItemToBibEntry(item: ZoteroItem): BibEntry {
   const year = d.date ? extractYear(d.date) : undefined;
 
   const fields: Record<string, string> = {};
+  if (d.title) fields.title = d.title;
   if (authors) fields.author = authors;
   if (year) fields.year = year;
   if (d.DOI) fields.doi = d.DOI;
   if (d.url) fields.url = d.url;
   if (d.publicationTitle) fields.journal = d.publicationTitle;
+  // Map conference/book names back to BibTeX booktitle
+  if ((d as any).conferenceName) fields.booktitle = (d as any).conferenceName;
+  if ((d as any).bookTitle) fields.booktitle = (d as any).bookTitle;
   if (d.volume) fields.volume = d.volume;
   if (d.issue) fields.issue = d.issue;
   if (d.pages) fields.pages = d.pages;
@@ -444,7 +450,16 @@ export function bibEntryToZoteroItemData(entry: BibEntry): ZoteroItemData {
 
   if (entry.fields.abstract) item.abstractNote = entry.fields.abstract;
   if (entry.fields.journal) item.publicationTitle = entry.fields.journal;
-  if (entry.fields.booktitle) item.publicationTitle = entry.fields.booktitle;
+  // Map booktitle to the correct Zotero field based on item type
+  if (entry.fields.booktitle) {
+    if (itemType === "conferencePaper") {
+      item.conferenceName = entry.fields.booktitle;
+    } else if (itemType === "bookSection") {
+      item.bookTitle = entry.fields.booktitle;
+    } else {
+      item.publicationTitle = entry.fields.booktitle;
+    }
+  }
   if (entry.fields.year ?? entry.year) {
     item.date = entry.fields.year ?? entry.year;
   }

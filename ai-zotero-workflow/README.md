@@ -64,6 +64,8 @@ The server is built on the **Semantic Scholar (S2) API**, because S2 aggregates 
 | `zotero_update_item` | Update specific fields of a Zotero item via PATCH request |
 | `zotero_search_library` | Search the local Zotero library (via Better BibTeX RPC) |
 | `zotero_delete_items` | Delete one or more items from Zotero by key |
+| `zotero_clean_braces` | Clean LaTeX curly braces from collection items — converts accent commands to Unicode, strips case-protecting braces |
+| `zotero_apply_sentence_case` | Convert titles to Sentence Case with protection for acronyms, proper nouns, and brand names |
 
 ## AI Prompt Templates
 

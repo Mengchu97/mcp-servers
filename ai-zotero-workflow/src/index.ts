@@ -45,9 +45,11 @@ import {
   deleteItem,
   getCollectionItems,
   getItem,
-  updateItem
+  updateItem,
+  getAllCollectionItems
 } from "./zotero.js";
 import { validatePapers, filterPapersWithDoi } from "./doi-validator.js";
+import { cleanBraces, removeBraces, needsBraceCleaning, toSentenceCase } from "./text-normalize.js";
 
 const server = new McpServer({
   name: "ai-zotero-workflow",
@@ -450,6 +452,212 @@ server.tool(
       };
     }
   }
+);
+
+// --- Tool 10: clean_braces ---
+
+server.tool(
+  "zotero_clean_braces",
+  "Clean LaTeX curly braces from Zotero collection items. Removes case-protecting braces ({W} → W), converts LaTeX accent commands to Unicode ({\\`e} → è), and strips structural braces from fields like abstractNote. Supports dry-run mode to preview changes before applying.",
+  {
+    collection_key: z.string().describe("The key of the Zotero collection to process"),
+    dry_run: z.boolean().optional().default(true).describe("Preview only — don't actually update items (default true)"),
+  },
+  async (params) => {
+    try {
+      const items = await getAllCollectionItems(params.collection_key);
+      if (items.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: "No items found in collection" }],
+        };
+      }
+
+      const itemsToUpdate: Array<{
+        key: string;
+        version: number;
+        changes: Record<string, unknown>;
+        details: string[];
+      }> = [];
+
+      for (const item of items) {
+        const d = item.data;
+        const changes: Record<string, unknown> = {};
+        const details: string[] = [];
+
+        // Clean title with full LaTeX processing
+        if (d.title && needsBraceCleaning(d.title)) {
+          const cleaned = cleanBraces(d.title);
+          if (cleaned !== d.title) {
+            changes.title = cleaned;
+            details.push(`title: "${d.title}" → "${cleaned}"`);
+          }
+        }
+
+        // Clean creators
+        if (d.creators && Array.isArray(d.creators)) {
+          let creatorsChanged = false;
+          const cleanedCreators = d.creators.map((creator: any) => {
+            const c = { ...creator };
+            if (creator.firstName && needsBraceCleaning(creator.firstName)) {
+              c.firstName = cleanBraces(creator.firstName);
+              creatorsChanged = true;
+            }
+            if (creator.lastName && needsBraceCleaning(creator.lastName)) {
+              c.lastName = cleanBraces(creator.lastName);
+              creatorsChanged = true;
+            }
+            if (creator.name && needsBraceCleaning(creator.name)) {
+              c.name = cleanBraces(creator.name);
+              creatorsChanged = true;
+            }
+            return c;
+          });
+          if (creatorsChanged) {
+            changes.creators = cleanedCreators;
+            details.push(`creators updated`);
+          }
+        }
+
+        // Clean other string fields (just strip braces)
+        for (const [field, value] of Object.entries(d)) {
+          if (["key", "version", "itemType", "creators", "tags", "collections",
+               "relations", "dateAdded", "dateModified", "title"].includes(field)) continue;
+          if (typeof value !== "string" || !value.includes("{")) continue;
+          const cleaned = removeBraces(value);
+          if (cleaned !== value) {
+            changes[field] = cleaned;
+            details.push(`${field}: braces removed`);
+          }
+        }
+
+        if (Object.keys(changes).length > 0) {
+          itemsToUpdate.push({ key: d.key, version: item.version, changes, details });
+        }
+      }
+
+      if (itemsToUpdate.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: `No items need cleaning. Checked ${items.length} items.` }],
+        };
+      }
+
+      const preview = [
+        `Found ${itemsToUpdate.length} items needing cleanup (out of ${items.length}):`,
+        "─".repeat(50),
+        ...itemsToUpdate.map((item, i) =>
+          `[${i + 1}] ${item.key}\n  ${item.details.join("\n  ")}`
+        ),
+      ];
+
+      if (params.dry_run) {
+        preview.push("", "─".repeat(50), "DRY RUN — no changes applied. Set dry_run=false to apply.");
+        return { content: [{ type: "text" as const, text: preview.join("\n") }] };
+      }
+
+      // Apply changes
+      let ok = 0, fail = 0;
+      for (let i = 0; i < itemsToUpdate.length; i++) {
+        const item = itemsToUpdate[i];
+        try {
+          await updateItem(item.key, item.changes, item.version);
+          ok++;
+        } catch {
+          fail++;
+        }
+        if (i < itemsToUpdate.length - 1) await new Promise(r => setTimeout(r, 200));
+      }
+
+      preview.push("", "─".repeat(50), `Applied: ${ok} updated, ${fail} failed, ${itemsToUpdate.length} total`);
+      return { content: [{ type: "text" as const, text: preview.join("\n") }] };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// --- Tool 11: apply_sentence_case ---
+
+server.tool(
+  "zotero_apply_sentence_case",
+  "Convert titles in a Zotero collection to Sentence Case. First word capitalized, rest lowercase, with automatic protection for acronyms (PCA, BM3D), proper nouns (Fourier, Wirtinger), CamelCase brands (PhasePack, ISTA-Net), and institution names (IT'IS). Supports dry-run mode and custom protection terms.",
+  {
+    collection_key: z.string().describe("The key of the Zotero collection to process"),
+    dry_run: z.boolean().optional().default(true).describe("Preview only — don't actually update items (default true)"),
+    extra_acronyms: z.array(z.string()).optional().describe("Additional acronyms to protect (added to built-in list)"),
+    extra_proper_nouns: z.array(z.string()).optional().describe("Additional proper nouns to capitalize (added to built-in list)"),
+  },
+  async (params) => {
+    try {
+      const items = await getAllCollectionItems(params.collection_key);
+      if (items.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: "No items found in collection" }],
+        };
+      }
+
+      const changes: Array<{
+        key: string;
+        version: number;
+        original: string;
+        converted: string;
+      }> = [];
+
+      for (const item of items) {
+        const title = item.data?.title;
+        if (!title) continue;
+        const converted = toSentenceCase(title, {
+          extraAcronyms: params.extra_acronyms,
+          extraProperNouns: params.extra_proper_nouns,
+        });
+        if (converted !== title) {
+          changes.push({ key: item.data.key, version: item.version, original: title, converted });
+        }
+      }
+
+      if (changes.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: `All ${items.length} titles already in sentence case. Nothing to do.` }],
+        };
+      }
+
+      const preview = [
+        `Found ${changes.length} titles to convert (out of ${items.length}):`,
+        "─".repeat(50),
+        ...changes.map((c, i) =>
+          `[${i + 1}] ${c.key}\n  FROM: ${c.original}\n  TO:   ${c.converted}`
+        ),
+      ];
+
+      if (params.dry_run) {
+        preview.push("", "─".repeat(50), "DRY RUN — no changes applied. Set dry_run=false to apply.");
+        return { content: [{ type: "text" as const, text: preview.join("\n") }] };
+      }
+
+      // Apply changes
+      let ok = 0, fail = 0;
+      for (let i = 0; i < changes.length; i++) {
+        const c = changes[i];
+        try {
+          await updateItem(c.key, { title: c.converted }, c.version);
+          ok++;
+        } catch {
+          fail++;
+        }
+        if (i < changes.length - 1) await new Promise(r => setTimeout(r, 150));
+      }
+
+      preview.push("", "─".repeat(50), `Applied: ${ok} updated, ${fail} failed, ${changes.length} total`);
+      return { content: [{ type: "text" as const, text: preview.join("\n") }] };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
 );
 
 
