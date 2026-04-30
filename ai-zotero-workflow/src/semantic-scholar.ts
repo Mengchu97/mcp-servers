@@ -1,13 +1,28 @@
 /**
  * Semantic Scholar API client for academic paper search.
  *
- * Uses the public S2 Graph API. No API key required for basic usage,
- * but rate-limited to ~1 RPS shared globally (unauthenticated).
+ * Uses the S2 Graph API. Supports two modes:
+ *   - Authenticated: set SEMANTIC_SCHOLAR_API_KEY env var for higher rate limits
+ *     (1 req/s enforced client-side). Sends x-api-key header.
+ *   - Unauthenticated: no API key set. Shared rate-limited pool (~1 RPS globally).
+ *     On HTTP 429, retries once after Retry-After header (fallback 2s).
  *
  * API docs: https://api.semanticscholar.org/api-docs/
  */
 
 const S2_BASE = "https://api.semanticscholar.org/graph/v1";
+
+// Simple rate limiter: 1 request per second when authenticated
+let lastRequestTime = 0;
+async function enforceRateLimit(): Promise<void> {
+  if (!process.env.SEMANTIC_SCHOLAR_API_KEY) return;
+  const now = Date.now();
+  const elapsed = now - lastRequestTime;
+  if (elapsed < 1000) {
+    await new Promise((r) => setTimeout(r, 1000 - elapsed));
+  }
+  lastRequestTime = Date.now();
+}
 
 export interface S2Paper {
   paperId: string;
@@ -87,6 +102,7 @@ function buildSearchUrl(opts: SearchPapersOptions): URL {
 
 export async function searchPapers(opts: SearchPapersOptions): Promise<S2SearchResult> {
   const url = buildSearchUrl(opts);
+  await enforceRateLimit();
 
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -130,6 +146,7 @@ export async function getPaperById(
   // paperId can be S2 ID, DOI:<doi>, ArXiv:<id>, etc.
   const url = new URL(`${S2_BASE}/paper/${encodeURIComponent(paperId)}`);
   url.searchParams.set("fields", REQUIRED_FIELDS.join(","));
+  await enforceRateLimit();
 
   const headers: Record<string, string> = { Accept: "application/json" };
   if (process.env.SEMANTIC_SCHOLAR_API_KEY) {

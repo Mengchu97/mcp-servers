@@ -1,15 +1,20 @@
 
-import { execSync } from "child_process";
+import { readFileSync } from "fs";
+import { homedir } from "os";
+import { resolve } from "path";
+
+// Load env vars from ~/.bash_env.local (cross-platform, no bash dependency)
 try {
-  const output = execSync('bash -i -c "env"', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
-  for (const line of output.split('\n')) {
-    const match = line.match(/^([^=]+)=(.*)$/);
+  const envFile = resolve(homedir(), ".bash_env.local");
+  const content = readFileSync(envFile, "utf-8");
+  for (const line of content.split("\n")) {
+    const match = line.match(/^export\s+([^=]+)="(.*)"/);
     if (match && !process.env[match[1]]) {
       process.env[match[1]] = match[2];
     }
   }
-} catch (e) {
-  // Ignore
+} catch {
+  // File doesn't exist or unreadable, continue without it
 }
 
 /**
@@ -670,6 +675,7 @@ async function main() {
   console.error(`  Zotero Web API: ${process.env.ZOTERO_API_KEY ? "configured" : "not configured"}`);
   console.error(`  Zotero User ID: ${process.env.ZOTERO_USER_ID ?? "(not set — required for web API)"}`);
   console.error(`  Local Zotero: http://localhost:${process.env.ZOTERO_LOCAL_PORT ?? "23119"}`);
+  console.error(`  S2 API Key: ${process.env.SEMANTIC_SCHOLAR_API_KEY ? "configured (1 RPS rate limit)" : "not configured (unauthenticated mode)"}`);
 }
 
 main().catch((err) => {
