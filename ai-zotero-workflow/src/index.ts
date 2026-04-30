@@ -51,7 +51,12 @@ import {
   getCollectionItems,
   getItem,
   updateItem,
-  getAllCollectionItems
+  getAllCollectionItems,
+  removeItemsFromCollection,
+  addItemsToCollection,
+  searchCollection,
+  getCollectionDois,
+  getCollectionStats,
 } from "./zotero.js";
 import { validatePapers, filterPapersWithDoi } from "./doi-validator.js";
 import { cleanBraces, removeBraces, needsBraceCleaning, toSentenceCase } from "./text-normalize.js";
@@ -174,7 +179,7 @@ server.tool(
 
 server.tool(
   "import_papers_to_zotero",
-  "Import papers into Zotero. Accepts either S2 paper data (JSON array) or a search query to fetch and import. Creates the target collection if it doesn't exist.",
+  "Import papers into Zotero. Accepts either S2 paper data (JSON array) or a search query to fetch and import. Creates the target collection if it doesn't exist. Supports duplicate detection to skip papers already in the collection.",
   {
     papers_json: z.string().optional().describe("JSON string of S2 paper objects (from search_papers output). If not provided, must supply 'query'."),
     query: z.string().optional().describe("If papers_json not provided, search S2 with this query and import results"),
@@ -183,6 +188,7 @@ server.tool(
     sort_by_citations: z.boolean().optional().default(true).describe("Sort by citation count before importing (default true)"),
     year_from: z.number().optional().describe("Start year filter"),
     year_to: z.number().optional().describe("End year filter"),
+    skip_duplicates: z.boolean().optional().default(true).describe("Skip papers already in the collection (detected by DOI matching, default true)"),
   },
   async (params) => {
     try {
@@ -246,8 +252,8 @@ server.tool(
         };
       }
 
-      // Import ONLY validated papers to Zotero
-      const result = await importPapers(validatedPapers, params.collection_name);
+      // Import ONLY validated papers to Zotero (with duplicate detection)
+      const result = await importPapers(validatedPapers, params.collection_name, params.skip_duplicates);
 
       const lines = [
         ...report,
@@ -257,8 +263,23 @@ server.tool(
         `Imported: ${result.imported}/${validatedPapers.length} validated papers`,
       ];
 
+      if (result.duplicatesSkipped > 0) {
+        lines.push(`Duplicates skipped: ${result.duplicatesSkipped} (already in collection)`);
+        for (const title of result.duplicateTitles) {
+          lines.push(`  ⏭ "${title}"`);
+        }
+      }
+
       if (result.collectionKey) {
         lines.push(`Collection key: ${result.collectionKey}`);
+
+        // Include collection stats
+        try {
+          const stats = await getCollectionStats(result.collectionKey);
+          lines.push(`Collection now has ${stats.itemCount} items total`);
+        } catch {
+          // Stats fetch failed, skip
+        }
       }
 
       if (result.errors.length > 0) {
@@ -266,10 +287,14 @@ server.tool(
       }
 
       // List what was imported
-      lines.push("", "Papers imported:");
-      validatedPapers.forEach((p, i) => {
-        lines.push(`  ${i + 1}. ${p.title} (${p.year ?? "n/a"}) - ${p.citationCount ?? 0} citations [DOI: ${p.externalIds?.DOI}]`);
-      });
+      if (result.imported > 0) {
+        lines.push("", "Papers imported:");
+        validatedPapers.forEach((p, i) => {
+          // Skip if this was a duplicate
+          if (result.duplicateTitles.includes(p.title)) return;
+          lines.push(`  ${i + 1}. ${p.title} (${p.year ?? "n/a"}) - ${p.citationCount ?? 0} citations [DOI: ${p.externalIds?.DOI}]`);
+        });
+      }
 
       return {
         content: [{ type: "text" as const, text: lines.join("\n") }],
@@ -436,7 +461,7 @@ server.tool(
 
 server.tool(
   "zotero_delete_items",
-  "Delete one or more items from Zotero by key.",
+  "Delete one or more items from Zotero by key. WARNING: This permanently deletes items from the library. Use zotero_remove_from_collection to only remove from a collection.",
   {
     item_keys: z.array(z.string()).describe("Array of Zotero item keys to delete")
   },
@@ -457,6 +482,219 @@ server.tool(
       };
     }
   }
+);
+
+// --- Tool 9b: remove_from_collection ---
+
+server.tool(
+  "zotero_remove_from_collection",
+  "Remove items from a specific collection WITHOUT deleting them from the library. The items remain in other collections and in the library root.",
+  {
+    item_keys: z.array(z.string()).describe("Array of Zotero item keys to remove from the collection"),
+    collection_key: z.string().describe("The key of the collection to remove items from"),
+  },
+  async (params) => {
+    try {
+      const result = await removeItemsFromCollection(params.item_keys, params.collection_key);
+
+      const lines: string[] = [];
+      if (result.removed.length > 0) {
+        lines.push(`Removed ${result.removed.length} item(s) from collection:`);
+        for (const key of result.removed) {
+          lines.push(`  ✓ ${key}`);
+        }
+      }
+      if (result.failed.length > 0) {
+        lines.push(`Failed: ${result.failed.length}`);
+        for (const f of result.failed) {
+          lines.push(`  ✗ ${f.key}: ${f.error}`);
+        }
+      }
+
+      return {
+        content: [{ type: "text" as const, text: lines.join("\n") || "No changes made" }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// --- Tool 9c: add_to_collection ---
+
+server.tool(
+  "zotero_add_to_collection",
+  "Add existing library items to a collection. Items can belong to multiple collections.",
+  {
+    item_keys: z.array(z.string()).describe("Array of Zotero item keys to add to the collection"),
+    collection_key: z.string().describe("The key of the collection to add items to"),
+  },
+  async (params) => {
+    try {
+      const result = await addItemsToCollection(params.item_keys, params.collection_key);
+
+      const lines: string[] = [];
+      if (result.added.length > 0) {
+        lines.push(`Added ${result.added.length} item(s) to collection:`);
+        for (const key of result.added) {
+          lines.push(`  ✓ ${key}`);
+        }
+      }
+      if (result.already.length > 0) {
+        lines.push(`Already in collection: ${result.already.length}`);
+        for (const key of result.already) {
+          lines.push(`  = ${key}`);
+        }
+      }
+      if (result.failed.length > 0) {
+        lines.push(`Failed: ${result.failed.length}`);
+        for (const f of result.failed) {
+          lines.push(`  ✗ ${f.key}: ${f.error}`);
+        }
+      }
+
+      return {
+        content: [{ type: "text" as const, text: lines.join("\n") || "No changes made" }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// --- Tool 9d: search_collection ---
+
+server.tool(
+  "zotero_search_collection",
+  "Search within a specific Zotero collection by matching query against title, DOI, authors, and extra fields. Returns matching items with key metadata.",
+  {
+    collection_key: z.string().describe("The key of the Zotero collection to search within"),
+    query: z.string().describe("Search query (matches against title, DOI, authors)"),
+  },
+  async (params) => {
+    try {
+      const results = await searchCollection(params.collection_key, params.query);
+
+      if (results.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: `No items matching "${params.query}" found in collection` }],
+        };
+      }
+
+      const lines = [
+        `Found ${results.length} item(s) matching "${params.query}":`,
+        "─".repeat(50),
+        ...results.map((r, i) =>
+          `[${i + 1}] ${r.key}\n  Title: ${r.title}\n  Authors: ${r.creators}\n  DOI: ${r.DOI || "N/A"}\n  Date: ${r.date || "N/A"}\n  Type: ${r.itemType}`
+        ),
+      ];
+
+      return {
+        content: [{ type: "text" as const, text: lines.join("\n") }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// --- Tool 9e: import_by_dois ---
+
+server.tool(
+  "zotero_import_by_dois",
+  "Import papers into Zotero by DOI directly. Fetches metadata from Semantic Scholar for each DOI. More precise than keyword-based import. Supports duplicate detection.",
+  {
+    dois: z.array(z.string()).describe("Array of DOI strings to import (e.g. ['10.1234/567', '10.5678/910'])"),
+    collection_name: z.string().describe("Name of the Zotero collection to import into (created if it doesn't exist)"),
+    skip_duplicates: z.boolean().optional().default(true).describe("Skip papers already in the collection (detected by DOI matching, default true)"),
+  },
+  async (params) => {
+    try {
+      const papers: S2Paper[] = [];
+      const fetchErrors: string[] = [];
+
+      // Fetch each paper from S2 by DOI
+      for (const doi of params.dois) {
+        try {
+          const paper = await getPaperById(`DOI:${doi}`);
+          papers.push(paper);
+        } catch (err) {
+          fetchErrors.push(`DOI ${doi}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      if (papers.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: `No papers could be fetched.\n${fetchErrors.join("\n")}` }],
+          isError: true,
+        };
+      }
+
+      // DOI validation (already have DOIs, just verify they resolve)
+      const validation = await validatePapers(papers);
+      const validatedPapers = validation.accepted.map((v) => v.paper);
+
+      const report: string[] = [];
+      report.push(`Fetched ${papers.length}/${params.dois.length} papers from S2`);
+      if (fetchErrors.length > 0) {
+        report.push("Fetch errors:");
+        fetchErrors.forEach(e => report.push(`  ✗ ${e}`));
+      }
+      report.push(`DOI Validation: ${validatedPapers.length}/${papers.length} passed`);
+
+      if (validatedPapers.length === 0) {
+        report.push("No valid papers to import.");
+        return { content: [{ type: "text" as const, text: report.join("\n") }] };
+      }
+
+      // Import with duplicate detection
+      const result = await importPapers(validatedPapers, params.collection_name, params.skip_duplicates);
+
+      report.push("", `Import complete via ${result.method}`);
+      report.push(`Collection: ${result.collectionName}`);
+      report.push(`Imported: ${result.imported}/${validatedPapers.length}`);
+
+      if (result.duplicatesSkipped > 0) {
+        report.push(`Duplicates skipped: ${result.duplicatesSkipped}`);
+        result.duplicateTitles.forEach(t => report.push(`  ⏭ "${t}"`));
+      }
+
+      if (result.collectionKey) {
+        report.push(`Collection key: ${result.collectionKey}`);
+        try {
+          const stats = await getCollectionStats(result.collectionKey);
+          report.push(`Collection now has ${stats.itemCount} items total`);
+        } catch { /* skip */ }
+      }
+
+      if (result.errors.length > 0) {
+        report.push(`Errors: ${result.errors.join("; ")}`);
+      }
+
+      return {
+        content: [{ type: "text" as const, text: report.join("\n") }],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error importing by DOIs: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
 );
 
 // --- Tool 10: clean_braces ---

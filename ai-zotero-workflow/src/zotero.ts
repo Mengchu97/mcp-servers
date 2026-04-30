@@ -305,8 +305,11 @@ function s2ToZoteroItem(paper: S2Paper, collectionKeys?: string[]): ZoteroItemTe
 export async function importPapers(
   papers: S2Paper[],
   collectionName?: string,
+  skipDuplicates?: boolean,
 ): Promise<{
   imported: number;
+  duplicatesSkipped: number;
+  duplicateTitles: string[];
   collectionKey?: string;
   collectionName?: string;
   method: string;
@@ -315,6 +318,9 @@ export async function importPapers(
   const errors: string[] = [];
   let collectionKey: string | undefined;
   let method: string;
+  let duplicatesSkipped = 0;
+  let duplicateTitles: string[] = [];
+  let papersToImport = papers;
 
   // Resolve or create collection if name provided
   if (collectionName) {
@@ -343,8 +349,40 @@ export async function importPapers(
     method = hasWebApi() ? "web-api" : "local-connector";
   }
 
+  // Duplicate detection: check existing DOIs in the target collection
+  if (skipDuplicates && collectionKey) {
+    try {
+      const existingDois = await getCollectionDois(collectionKey);
+      const filtered: S2Paper[] = [];
+      for (const paper of papersToImport) {
+        const doi = paper.externalIds?.DOI?.toLowerCase();
+        if (doi && existingDois.has(doi)) {
+          duplicatesSkipped++;
+          duplicateTitles.push(paper.title);
+        } else {
+          filtered.push(paper);
+        }
+      }
+      papersToImport = filtered;
+    } catch {
+      // Duplicate check failed, proceed with all papers
+    }
+  }
+
+  if (papersToImport.length === 0) {
+    return {
+      imported: 0,
+      duplicatesSkipped,
+      duplicateTitles,
+      collectionKey,
+      collectionName,
+      method,
+      errors,
+    };
+  }
+
   // Convert papers to Zotero items
-  const items = papers.map((p) => s2ToZoteroItem(p, collectionKey ? [collectionKey] : undefined));
+  const items = papersToImport.map((p) => s2ToZoteroItem(p, collectionKey ? [collectionKey] : undefined));
 
   if (method === "web-api" && hasWebApi()) {
     // Use Web API — batch up to 50 items per request
@@ -369,6 +407,8 @@ export async function importPapers(
 
     return {
       imported,
+      duplicatesSkipped,
+      duplicateTitles,
       collectionKey,
       collectionName,
       method: "web-api",
@@ -391,6 +431,8 @@ export async function importPapers(
 
   return {
     imported,
+    duplicatesSkipped,
+    duplicateTitles,
     collectionName,
     method: "local-connector",
     errors,
@@ -517,4 +559,173 @@ export async function getAllCollectionItems(collectionKey: string): Promise<any[
     item.data.itemType !== "attachment" &&
     item.data.itemType !== "note"
   );
+}
+
+/**
+ * Remove items from a specific collection (without deleting them from the library).
+ * Patches each item to remove the collectionKey from its `collections` array.
+ */
+export async function removeItemsFromCollection(
+  itemKeys: string[],
+  collectionKey: string,
+): Promise<{ removed: string[]; failed: Array<{ key: string; error: string }> }> {
+  if (!hasWebApi()) {
+    throw new Error("removeItemsFromCollection requires ZOTERO_API_KEY");
+  }
+
+  const removed: string[] = [];
+  const failed: Array<{ key: string; error: string }> = [];
+
+  for (const key of itemKeys) {
+    try {
+      const item = await getItem(key);
+      const collections: string[] = item.data?.collections ?? [];
+      const updatedCollections = collections.filter((c: string) => c !== collectionKey);
+
+      if (updatedCollections.length === collections.length) {
+        // Item was not in this collection
+        failed.push({ key, error: "Item not in this collection" });
+        continue;
+      }
+
+      await updateItem(key, { collections: updatedCollections }, item.version);
+      removed.push(key);
+    } catch (err) {
+      failed.push({ key, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  return { removed, failed };
+}
+
+/**
+ * Add existing library items to a collection.
+ * Patches each item to add the collectionKey to its `collections` array.
+ */
+export async function addItemsToCollection(
+  itemKeys: string[],
+  collectionKey: string,
+): Promise<{ added: string[]; already: string[]; failed: Array<{ key: string; error: string }> }> {
+  if (!hasWebApi()) {
+    throw new Error("addItemsToCollection requires ZOTERO_API_KEY");
+  }
+
+  const added: string[] = [];
+  const already: string[] = [];
+  const failed: Array<{ key: string; error: string }> = [];
+
+  for (const key of itemKeys) {
+    try {
+      const item = await getItem(key);
+      const collections: string[] = item.data?.collections ?? [];
+
+      if (collections.includes(collectionKey)) {
+        already.push(key);
+        continue;
+      }
+
+      collections.push(collectionKey);
+      await updateItem(key, { collections }, item.version);
+      added.push(key);
+    } catch (err) {
+      failed.push({ key, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  return { added, already, failed };
+}
+
+/**
+ * Search within a specific collection by matching query against title, DOI, and authors.
+ * Returns matching items with key metadata.
+ */
+export async function searchCollection(
+  collectionKey: string,
+  query: string,
+): Promise<Array<{
+  key: string;
+  title: string;
+  creators: string;
+  DOI: string;
+  date: string;
+  itemType: string;
+}>> {
+  const items = await getAllCollectionItems(collectionKey);
+  const q = query.toLowerCase();
+
+  const results: Array<{
+    key: string;
+    title: string;
+    creators: string;
+    DOI: string;
+    date: string;
+    itemType: string;
+  }> = [];
+
+  for (const item of items) {
+    const d = item.data;
+    if (!d) continue;
+
+    const title = (d.title ?? "").toLowerCase();
+    const doi = (d.DOI ?? "").toLowerCase();
+    const creators = Array.isArray(d.creators)
+      ? d.creators.map((c: any) => `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()).join(" ").toLowerCase()
+      : "";
+    const extra = (d.extra ?? "").toLowerCase();
+
+    if (
+      title.includes(q) ||
+      doi.includes(q) ||
+      creators.includes(q) ||
+      extra.includes(q)
+    ) {
+      results.push({
+        key: d.key,
+        title: d.title ?? "",
+        creators: Array.isArray(d.creators)
+          ? d.creators.map((c: any) => `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()).join(", ")
+          : "",
+        DOI: d.DOI ?? "",
+        date: d.date ?? "",
+        itemType: d.itemType ?? "",
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Get existing DOIs in a collection for duplicate detection.
+ */
+export async function getCollectionDois(collectionKey: string): Promise<Set<string>> {
+  const items = await getAllCollectionItems(collectionKey);
+  const dois = new Set<string>();
+  for (const item of items) {
+    const doi = item.data?.DOI;
+    if (doi && typeof doi === "string") {
+      dois.add(doi.toLowerCase());
+    }
+  }
+  return dois;
+}
+
+/**
+ * Get collection stats (item count, collection name).
+ */
+export async function getCollectionStats(collectionKey: string): Promise<{
+  key: string;
+  name: string;
+  itemCount: number;
+}> {
+  const collections = await listCollections();
+  const col = collections.find(c => c.data.key === collectionKey);
+  if (!col) {
+    throw new Error(`Collection ${collectionKey} not found`);
+  }
+  return {
+    key: col.data.key,
+    name: col.data.name,
+    itemCount: col.meta.numItems,
+  };
 }
